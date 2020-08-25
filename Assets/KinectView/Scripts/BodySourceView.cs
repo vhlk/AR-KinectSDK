@@ -27,6 +27,8 @@ public class BodySourceView : MonoBehaviour
     public Dropdown armDropdown;
 
     private int armSide = 0;
+
+    float closeRate = 0.3f; // representa a porcentagem em relação à diferença entre o ângulo máximo e o mínimo que será considerado próximo
     
     private Dictionary<ulong, GameObject> _Bodies = new Dictionary<ulong, GameObject>();
     private BodySourceManager _BodyManager;
@@ -213,7 +215,8 @@ public class BodySourceView : MonoBehaviour
                     lrShoulderElbow.SetColors(Color.green, Color.green);
                     lrElbowWrist.SetColors(Color.green, Color.green);
                 }
-                else if (angle <= maxAngle+30 && angle >= minAngle-30)
+                else if (angle <= maxAngle + closeRate * (maxAngle - minAngle) && 
+                    angle > minAngle)
                 {
                     // vamos nos colorir o braço de amarelo, representando estar perto
                     lrShoulderElbow.SetColors(Color.yellow, Color.yellow);
@@ -246,7 +249,8 @@ public class BodySourceView : MonoBehaviour
                     lrShoulderElbow.SetColors(Color.green, Color.green);
                     lrElbowWrist.SetColors(Color.green, Color.green);
                 }
-                else if (angle <= maxAngle + 30 && angle >= minAngle - 30)
+                else if (angle <= maxAngle + closeRate * (maxAngle - minAngle) &&
+                    angle > minAngle)
                 {
                     // vamos nos colorir o braço de amarelo, representando estar perto
                     lrShoulderElbow.SetColors(Color.yellow, Color.yellow);
@@ -300,15 +304,35 @@ public class BodySourceView : MonoBehaviour
         Vector3 arrowOrigin;
         Vector3 arrowEnd;
 
+        // caso tenha passado, precisamos apontar para o lado contrário (sentido da mão)
+        bool inversedArrow = false;
+        if (angle < minAngle) inversedArrow = true;
+
         if (armSide == LEFT_ARM)
         {
-            arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.WristLeft]);
-            arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderLeft]);
+            if (inversedArrow)
+            {
+                arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.WristLeft]);
+                arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderLeft]);
+            }
+            else
+            {
+                arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.WristLeft]);
+                arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderLeft]);
+            }
         }
         else
         {
-            arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.WristRight]);
-            arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderRight]);
+            if (inversedArrow)
+            {
+                arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.WristRight]);
+                arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderRight]);
+            }
+            else
+            {
+                arrowOrigin = GetVector3FromJoint(body.Joints[Kinect.JointType.WristRight]);
+                arrowEnd = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderRight]);
+            }
         }
 
         // adaptar tamanho da cabeça
@@ -397,7 +421,7 @@ public class BodySourceView : MonoBehaviour
     {
         /* atualizar os ângulos no título */
 
-        titleText.text = "Exercício de musculatura\n" + "Neste teste tentamos acostumar o braço a " +
+        titleText.text = "Exercício de musculatura\n" + "(Neste teste tentamos acostumar o braço a " +
             "dobrar a partir do ângulo de " + maxAngle + "° até " + minAngle + "°)";
     }
 
