@@ -11,9 +11,13 @@ public class BodySourceView : MonoBehaviour
 
     private const int LEFT_ARM = 0;
     private const int RIGHT_ARM = 1;
+    private const int DEFAULT_AXIS = 0;
+    private const int VERTICAL_AXIS = 1;
+    private const int HORIZONTAL_AXIS = 2;
 
     public Text angleText;
     public Text titleText;
+    public Text alertText;
 
     private int minAngle = 45;
     private int maxAngle = 90;
@@ -25,8 +29,16 @@ public class BodySourceView : MonoBehaviour
     private float percentHead = 0.4f;
 
     public Dropdown armDropdown;
+    public Dropdown axisDropdown;
 
     private int armSide = 0;
+    private int axis = 0;
+
+    public Toggle alignArmWithBodyToggle;
+
+    private bool alignArmWithBody;
+
+    private Plane bodyPlane;
 
     float closeRate = 0.3f; // representa a porcentagem em relação à diferença entre o ângulo máximo e o mínimo que será considerado próximo
     
@@ -131,12 +143,12 @@ public class BodySourceView : MonoBehaviour
                 if (angle == -1)
                 {
                     angleText.text = "Por favor ajuste o braço para aparecer na tela";
-                    return;
+                    continue;
                 }
                 if (angle == -2)
                 {
                     angleText.text = "Erro: seleção de braço inválida";
-                    return;
+                    continue;
                 }
                 angleText.text = angle.ToString() + "°";
 
@@ -144,6 +156,28 @@ public class BodySourceView : MonoBehaviour
                 ChangeArmColorOnAngle(angle, body);
 
                 UpdateArrow(body, angle);
+
+                // caso o usuário tenha selecionado a opção de alinhar o braço com o corpo
+                if (alignArmWithBody)
+                {
+                    // verificamos se foi possível criar o plano que representa o corpo
+                    bool isBodyVisible = UpdBodyPlane(body);
+                    if (!isBodyVisible)
+                    {
+                        alertText.text = "Corpo não detectado";
+                        alertText.enabled = true;
+                        continue;
+                    }
+                    if (!isArmAligned(body))
+                    {
+                        alertText.text = "Alinhe o braço!";
+                        alertText.enabled = true;
+                        continue;
+                    }
+                }
+
+                // desativamos o alerta caso esteja tudo certo
+                alertText.enabled = false;
             }
         }
         if (arrow != null && trackedIds.Count == 0) arrow.enabled = false;
@@ -423,6 +457,89 @@ public class BodySourceView : MonoBehaviour
 
         titleText.text = "Exercício de musculatura\n" + "(Neste teste tentamos acostumar o braço a " +
             "dobrar a partir do ângulo de " + maxAngle + "° até " + minAngle + "°)";
+    }
+
+    public void ChangeAxis()
+    {
+        /* muda de direção baseado na seleção no dropdown */
+        axis = axisDropdown.value;
+    }
+
+    private bool UpdBodyPlane(Kinect.Body body)
+    {
+        /* Entrada: Kinect.Body body
+         * Saída: booleano representando se foi popssível localizar o plano ou não
+         * aqui calculamos a direção do vetor (não importa o sentido) e verificamos se o vetor do braço está alinhado */
+
+        if (areArmsShouldersSpineVisible(body))
+        {
+            Vector3 vecSpineBase = GetVector3FromJoint(body.Joints[Kinect.JointType.SpineBase]);
+            Vector3 vecLeftShoulder = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderLeft]);
+            Vector3 vecRightShoulder = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderRight]);
+
+            bodyPlane = new Plane(vecSpineBase, vecLeftShoulder, vecRightShoulder);
+            return true;
+        }
+        return false;
+    }
+
+    public void ChangeAlignWithBody()
+    {
+        /* recebe do usuário, através do toggle, se deve alinhar o braço com o corpo */
+
+        alignArmWithBody = alignArmWithBodyToggle.isOn;
+    }
+
+    private bool areArmsShouldersSpineVisible(Kinect.Body body)
+    {
+        /* já temos uma função para calcular a visibilidade de um dos braços, 
+         * precisamos verificar se o outro ombro e a parte de baixo da coluna também está visível */
+
+        if (armSide == LEFT_ARM)
+        {
+            return body.Joints[Kinect.JointType.ElbowRight].TrackingState == Kinect.TrackingState.Tracked &&
+                   body.Joints[Kinect.JointType.SpineBase].TrackingState == Kinect.TrackingState.Tracked &&
+                   areLeftArmPointsVisibles(body);
+        }
+        else
+        {
+            return body.Joints[Kinect.JointType.ElbowLeft].TrackingState == Kinect.TrackingState.Tracked &&
+                body.Joints[Kinect.JointType.SpineBase].TrackingState == Kinect.TrackingState.Tracked &&
+                areRightArmPointsVisibles(body);
+        }
+    }
+
+    private bool isArmAligned(Kinect.Body body)
+        /* Entrada: Kinect.Body bode,
+         * Saída: booleano representando se o braço está alinhado com o corpo*/
+    {
+        float distPointPlane;
+
+       if (armSide == LEFT_ARM)
+        {
+            Vector3 posLeftElbow = GetVector3FromJoint(body.Joints[Kinect.JointType.ElbowLeft]);
+
+            // pegamos a distância do ponto ao plano
+            distPointPlane = Mathf.Abs(bodyPlane.GetDistanceToPoint(posLeftElbow));
+
+         }
+       else
+        {
+            Vector3 posRightElbow = GetVector3FromJoint(body.Joints[Kinect.JointType.ElbowRight]);
+
+            // pegamos a distância do ponto ao plano
+            distPointPlane = Mathf.Abs(bodyPlane.GetDistanceToPoint(posRightElbow));
+
+        }
+
+        if (distPointPlane <= 0.5)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
     private GameObject CreateBodyObject(ulong id)
