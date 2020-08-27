@@ -11,28 +11,26 @@ public class BodySourceView : MonoBehaviour
 
     private const int LEFT_ARM = 0;
     private const int RIGHT_ARM = 1;
-    private const int DEFAULT_AXIS = 0;
-    private const int VERTICAL_AXIS = 1;
-    private const int HORIZONTAL_AXIS = 2;
 
     public Text angleText;
     public Text titleText;
     public Text alertText;
+    public Text armBodyAngleText;
 
     private int minAngle = 45;
     private int maxAngle = 90;
 
     public InputField minAngleField;
     public InputField maxAngleField;
+    public InputField armBodyAngleField;
 
     private LineRenderer arrow;
     private float percentHead = 0.4f;
 
     public Dropdown armDropdown;
-    public Dropdown axisDropdown;
 
     private int armSide = 0;
-    private int axis = 0;
+    private int armBodyAngle = -1;
 
     public Toggle alignArmWithBodyToggle;
 
@@ -40,7 +38,8 @@ public class BodySourceView : MonoBehaviour
 
     private Plane bodyPlane;
 
-    float closeRate = 0.3f; // representa a porcentagem em relação à diferença entre o ângulo máximo e o mínimo que será considerado próximo
+    private float closeRate = 0.3f; // representa a porcentagem em relação à diferença entre o ângulo máximo e o mínimo que será considerado próximo
+    private float armBodyPrecision = 5;
     
     private Dictionary<ulong, GameObject> _Bodies = new Dictionary<ulong, GameObject>();
     private BodySourceManager _BodyManager;
@@ -150,7 +149,7 @@ public class BodySourceView : MonoBehaviour
                     angleText.text = "Erro: seleção de braço inválida";
                     continue;
                 }
-                angleText.text = angle.ToString() + "°";
+                angleText.text = angle.ToString("F") + "°";
 
                 // mudar cor do braço dependendo da angulação
                 ChangeArmColorOnAngle(angle, body);
@@ -176,11 +175,39 @@ public class BodySourceView : MonoBehaviour
                     }
                 }
 
+                if (armBodyAngle != -1)
+                {
+                    float currentArmBodyAngle = CalculateArmBodyAngle(body);
+                    if (currentArmBodyAngle == -1)
+                    {
+                        alertText.text = "Cintura e/ou braços não detectados";
+                        alertText.enabled = true;
+                        continue;
+                    }
+                    else
+                    {
+                        if (armBodyAngle + armBodyPrecision < currentArmBodyAngle ||
+                            currentArmBodyAngle < armBodyAngle - armBodyPrecision)
+                        {
+                            alertText.text = "Ajuste a abertura do braço para um ângulo de " + armBodyAngle + "°";
+                            alertText.enabled = true;
+                        }
+                        else
+                        {
+                            alertText.enabled = false;
+                        }
+                        armBodyAngleText.text = "Ângulo atual:\n" + currentArmBodyAngle + "°";
+                        armBodyAngleText.enabled = true;
+                    }
+                }
+                if (armBodyAngle == -1) armBodyAngleText.enabled = false;
+
                 // desativamos o alerta caso esteja tudo certo
-                alertText.enabled = false;
+                if (armBodyAngle == -1) alertText.enabled = false;
             }
         }
         if (arrow != null && trackedIds.Count == 0) arrow.enabled = false;
+        if (armBodyAngleText.enabled && trackedIds.Count == 0) armBodyAngleText.enabled = false;
     }
 
     private float CalculateArmAngle(Kinect.Body body)
@@ -459,10 +486,28 @@ public class BodySourceView : MonoBehaviour
             "dobrar a partir do ângulo de " + maxAngle + "° até " + minAngle + "°)";
     }
 
-    public void ChangeAxis()
+    public void ChangeArmBodyAngle()
     {
-        /* muda de direção baseado na seleção no dropdown */
-        axis = axisDropdown.value;
+        /* muda o ângulo do braço em relação ao corpo de acordo com o digitado pelo usuário
+         * Valor mínimo: 0
+         * Valor máximo: 180
+         */
+
+        // verificar se o input é vazio
+        if (armBodyAngleField.text == null || armBodyAngleField.text.Equals(""))
+        {
+            armBodyAngle = -1;
+            armBodyAngleText.enabled = false;
+            return;
+        }
+
+        int angle = int.Parse(armBodyAngleField.text);
+
+        // verificamos a condição
+        if (angle < 0 || angle > 180)
+            return;
+
+        armBodyAngle = angle;
     }
 
     private bool UpdBodyPlane(Kinect.Body body)
@@ -510,9 +555,10 @@ public class BodySourceView : MonoBehaviour
     }
 
     private bool isArmAligned(Kinect.Body body)
+    {
         /* Entrada: Kinect.Body bode,
          * Saída: booleano representando se o braço está alinhado com o corpo*/
-    {
+
         float distPointPlane;
 
        if (armSide == LEFT_ARM)
@@ -540,6 +586,77 @@ public class BodySourceView : MonoBehaviour
         {
             return false;
         }
+    }
+
+    private float CalculateArmBodyAngle(Kinect.Body body)
+    {
+        /* Entrada: Kinect.Body body
+         * Saída: float representando a angulação do braço em relação ao corpo
+         */
+
+        if (armSide == LEFT_ARM)
+        {
+            // primeiro verificamos se os pontos estão visíveis
+            if (areHipsVisible(body) && areLeftArmPointsVisibles(body)) {
+                Vector3 leftHip = GetVector3FromJoint(body.Joints[Kinect.JointType.HipLeft]);
+                Vector3 rightHip = GetVector3FromJoint(body.Joints[Kinect.JointType.HipRight]);
+                Vector3 leftShoulder = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderLeft]);
+                Vector3 leftElbow = GetVector3FromJoint(body.Joints[Kinect.JointType.ElbowLeft]);
+
+                Vector3 vecHipHip = leftHip - rightHip;
+                Vector3 vecHipShoulder = leftShoulder - leftHip;
+
+                // calculamos a projeção do vetor Hip->Shoulder sobre o vetor Hip->Hip
+                Vector3 proj = Vector3.Project(vecHipShoulder, vecHipHip);
+
+                // calculamos um ponto que se aproxima do local do corpo onde o braço encosta
+                Vector3 shoulderOnHipHeight = leftHip + proj;
+
+                Vector3 vecBody = shoulderOnHipHeight - leftShoulder;
+
+                Vector3 vecShoulderElbow = leftElbow - leftShoulder;
+
+                float angle = Vector3.Angle(vecBody, vecShoulderElbow);
+
+                return angle;
+            }
+        }
+        else
+        {
+            // primeiro verificamos se os pontos estão visíveis
+            if (areHipsVisible(body) && areRightArmPointsVisibles(body))
+            {
+                Vector3 leftHip = GetVector3FromJoint(body.Joints[Kinect.JointType.HipLeft]);
+                Vector3 rightHip = GetVector3FromJoint(body.Joints[Kinect.JointType.HipRight]);
+                Vector3 rightShoulder = GetVector3FromJoint(body.Joints[Kinect.JointType.ShoulderRight]);
+                Vector3 rightElbow = GetVector3FromJoint(body.Joints[Kinect.JointType.ElbowRight]);
+
+                Vector3 vecHipHip = rightHip - leftHip;
+                Vector3 vecHipShoulder = rightShoulder - rightHip;
+
+                // calculamos a projeção do vetor Hip->Shoulder sobre o vetor Hip->Hip
+                Vector3 proj = Vector3.Project(vecHipShoulder, vecHipHip);
+
+                Vector3 shoulderOnHipHeight = rightHip + proj;
+
+                // calculamos um ponto que se aproxima do local do corpo onde o braço encosta
+                Vector3 vecBody = shoulderOnHipHeight - rightShoulder;
+
+                Vector3 vecShoulderElbow = rightElbow - rightShoulder;
+
+                float angle = Vector3.Angle(vecBody, vecShoulderElbow);
+
+                return angle;
+            }
+        }
+        return -1;
+
+    }
+
+    private bool areHipsVisible(Kinect.Body body)
+    {
+        return body.Joints[Kinect.JointType.HipLeft].TrackingState == Kinect.TrackingState.Tracked &&
+            body.Joints[Kinect.JointType.HipRight].TrackingState == Kinect.TrackingState.Tracked;
     }
 
     private GameObject CreateBodyObject(ulong id)
