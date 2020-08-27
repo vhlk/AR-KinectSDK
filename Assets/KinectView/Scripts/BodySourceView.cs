@@ -196,7 +196,7 @@ public class BodySourceView : MonoBehaviour
                         {
                             alertText.enabled = false;
                         }
-                        armBodyAngleText.text = "Ângulo atual:\n" + currentArmBodyAngle + "°";
+                        armBodyAngleText.text = "Ângulo atual: " + currentArmBodyAngle + "°";
                         armBodyAngleText.enabled = true;
                     }
                 }
